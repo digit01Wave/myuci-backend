@@ -1,0 +1,25 @@
+body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+}
+
+.center_title{
+    color:black;
+    font-size:40pt;
+    text-align:center;
+}
+
+.center-list{
+
+
+}
+/*
+//navbar
+nav:hover{
+    background-color:#e6e6e6;
+}
+nav:hover a{
+    background-color:#e6e6e6;
+}
+*/
