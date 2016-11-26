@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Heatmaps</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        #map {
+            height: 100%;
+        }
+        #floating-panel {
+            position: absolute;
+            top: 10px;
+            left: 25%;
+            z-index: 5;
+            background-color: #fff;
+            padding: 5px;
+            border: 1px solid #999;
+            text-align: center;
+            font-family: 'Roboto','sans-serif';
+            line-height: 30px;
+            padding-left: 10px;
+          }
+        #floating-panel {
+            background-color: #fff;
+            border: 1px solid #999;
+            left: 25%;
+            padding: 5px;
+            position: absolute;
+            top: 10px;
+            z-index: 5;
+        }
+
+        /* The container <div> - needed to position the dropdown content */
+        .dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        /* Dropdown Content (Hidden by Default) */
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            background-color: #f9f9f9;
+            min-width: 160px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+        }
+
+        /* Links inside the dropdown */
+        .dropdown-content a {
+            color: black;
+            text-decoration: none;
+            display: block;
+        }
+
+        /* Change color of dropdown links on hover */
+        .dropdown-content a:hover {background-color: #f1f1f1}
+
+        /* Show the dropdown menu (use JS to add this class to the .dropdown-content container when the user clicks on the dropdown button) */
+        .show {display:block;}
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+
+</head>
+
+<body>
+    <div id="floating-panel">
+        <button onclick="toggleHeatmap()">Toggle Heatmap</button>
+        <button onclick="toggleSatelite()">Toggle Satelite</button>
+        <button onclick="changeRadius()">Change radius</button>
+        <button onclick="changeOpacity()">Change opacity</button>
+        <div class="dropdown">
+            <button id="emo_btn" onclick="myFunction()" class="dropbtn">Emotions: All</button>
+            <div id="myDropdown" class="dropdown-content">
+                <a href="#" onclick="changeEmotion('All')">All</a>
+                <a href="#" onclick="changeEmotion('Positive')">Positive</a>
+                <a href="#" onclick="changeEmotion('Negative')">Negative</a>
+                <a href="#" onclick="changeEmotion('Neutral')">Neutral</a>
+            </div>
+        </div>
+        <div class="dropdown">
+            <button id="events_btn" onclick="showEvents()" class="dropbtn">Event Type: All</button>
+            <div id="myEventDropdown" class="dropdown-content">
+                <a href="#" id="placeholder" onclick="changeEventType('All')">All</a>
+            </div>
+        </div>
+    </div>
+    <div id="map"></div>
+    <script type="text/javascript">
+
+        // This example requires the Visualization library. Include the libraries=visualization
+        // parameter when you first load the API. For example:
+        var map, heatmap;
+
+        var base_url = 'http://sln.ics.uci.edu:8085/eventshoplinux/rest/sttwebservice/search/70/box/33.554234134963096,-117.96170501708986/33.782820548089866,-117.67674713134767/1456531200000/';
+        var wrapper_url_start = 'http://whateverorigin.org/get?url=';
+        var wrapper_url_end = '&callback=?';
+
+        var event_url = 'http://54.215.240.25/myuci/getevents.php';
+
+        var heat_array = []; //contains all the points possible
+        var senti_array = []; //sentiment of each index of heat array
+        var event_dropdown = []; //contains all event source locations
+        var current_location = 'All'; //current global location filter
+        var current_emotion = 'All'; //current global emotion filter
+        var emoti_heat_array = []; //contains array in emotions
+
+        function initMap() {
+
+            //create google map with center in middle of UCI
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 15,
+                center: {lat: 33.645898, lng: -117.842703},
+                mapTypeId: google.maps.MapTypeId.ROADMAP
+            });
+
+            //gathers event and krumbs data
+            console.log("Gather JSON data of events");
+            $.ajax({
+                url: wrapper_url_start + event_url + wrapper_url_end,
+                async: false,
+                dataType: 'json',
+                success: function(data) {
+                    console.log(data.contents.length);
+                    //event_dropdown in format event_dropdown[source_type][lat] = list of longitudes
+
+                    var temp; //temporarilty holds indexes
+                    var numLat; //termporarily holds floats
+                    var numLon; //termporarily holds floats
+                    for (var i = 0; i < data.contents.length; i++) {
+                        temp = data.contents[i].source_type;
+                        if(!(temp in event_dropdown)){
+                            console.log("makeing empty because " + temp);
+                            event_dropdown[temp] = [];
+                        }
+                        //add coordinates if not already there
+                        numLat = parseFloat(data.contents[i].lat);
+                        numLon = parseFloat(data.contents[i].lon);
+                        if(!(numLat in event_dropdown[temp])){
+                            event_dropdown[temp][numLat] = [];
+                        }
+                        if(event_dropdown[temp][numLat].indexOf(numLon)<0){
+                            event_dropdown[temp][numLat].push(numLon);
+                        }
+                    }
+                    console.log(event_dropdown);
+
+                    for(var key in event_dropdown){
+                        temp = $("<a href=# onClick=changeEventType('"+key+"')>"+key+'</a>');
+                        $('#placeholder').after(temp);
+                    }
+                    gatherJSONKrumbs();
+                },
+                 error: function() {
+                    console.log("Error in retreiving json files from event database. May have to reload page.");
+                }
+            });
+
+        }
+
+        function gatherJSONKrumbs(){
+            //gathers data and afterwards creates heatmap
+            console.log("Gather JSON data of Krumbs");
+            $.ajax({
+                url: wrapper_url_start + base_url + Date.now() + wrapper_url_end,
+                async: false,
+                dataType: 'json',
+                success: function(data) {
+                    console.log(data.contents.length)
+                    for (var i = 0; i < data.contents.length; i++) {
+
+                        //push into heat_array lat,lng along with their sentiments
+                        heat_array.push(new google.maps.LatLng(data.contents[i].stt_where.point[0],data.contents[i].stt_where.point[1]));
+                        try{
+                            senti_array.push(data.contents[i].stt_what.intent_name.value);
+                        }catch(err){
+                            senti_array.push(data.contents[i].stt_what.intent_used_synonym.value);
+                        }
+
+                    }
+                    emoti_heat_array = heat_array;
+                    console.log("Now Creating Heatmap");
+                    heatmap = new google.maps.visualization.HeatmapLayer({
+                        data: getPoints(),
+                        map: map
+                    });
+                },
+                 error: function() {
+                    console.log("Error in retreiving json files. May have to reload page.");
+                }
+            });
+        }
+
+        function toggleHeatmap() {
+            heatmap.setMap(heatmap.getMap() ? null : map);
+        }
+
+        // Close the dropdown menu if the user clicks outside of it
+        window.onclick = function(event) {
+          if (!event.target.matches('.dropbtn')) {
+
+            var dropdowns = document.getElementsByClassName("dropdown-content");
+            var i;
+            for (i = 0; i < dropdowns.length; i++) {
+              var openDropdown = dropdowns[i];
+              if (openDropdown.classList.contains('show')) {
+                openDropdown.classList.remove('show');
+              }
+            }
+          }
+        }
+
+        function changeEmotion(textChosen){
+            $("#emo_btn").text("Emotions: " + textChosen);
+            current_emotion = textChosen;
+            console.log("now filtering for emotion = " + textChosen);
+            if(textChosen == "All"){
+                emoti_heat_array = heat_array;
+            }else {
+                var new_heat_array = [];
+                if (textChosen == "Positive"){
+                    for (var i = 0; i < senti_array.length; i++) {
+                        if(senti_array[i] == "Happy" || senti_array[i] == "Love"){
+                            new_heat_array.push(heat_array[i]);
+                        }
+                    }
+                }else if (textChosen == "Negative"){
+                    for (var i = 0; i < senti_array.length; i++) {
+                        if(senti_array[i] == "Upset"){
+                            new_heat_array.push(heat_array[i]);
+                        }
+                    }
+                } else{
+                    for (var i = 0; i < senti_array.length; i++) {
+                        if(!(senti_array[i] == "Happy" || senti_array[i] == "Love" || senti_array[i] == "Upset")){
+                            new_heat_array.push(heat_array[i]);
+                        }
+                    }
+                }
+                emoti_heat_array = new_heat_array;
+            }
+            filterLocation();
+
+        }
+
+
+        function changeEventType(textChosen){
+            $("#events_btn").text("Event Type: " + textChosen);
+            current_location = textChosen;
+            filterLocation();
+        }
+
+        function filterLocation(){
+            console.log("now filtering location for source = " + current_location);
+            var final_heat_array;
+            if(current_location == "All"){
+                final_heat_array = emoti_heat_array;
+            }
+            else{
+                final_heat_array = [];
+                for(var i = 0; i<emoti_heat_array.length; i++){
+                    for(var lat in event_dropdown[current_location]){
+                        if(Math.abs(emoti_heat_array[i].lat() - lat) <= 0.001 && Math.abs(emoti_heat_array[i].lng() - event_dropdown[current_location][lat]) <= 0.001){
+                            final_heat_array.push(emoti_heat_array[i]);
+                        }
+                    }
+                }
+
+            }
+            heatmap.setData(final_heat_array);
+
+        }
+
+        /* When the user clicks on the button,
+        toggle between hiding and showing the dropdown content */
+        function myFunction() {
+            document.getElementById("myDropdown").classList.toggle("show");
+        }
+
+        function showEvents(){
+            document.getElementById("myEventDropdown").classList.toggle("show");
+        }
+
+        function toggleSatelite(){
+            map.setMapTypeId(map.getMapTypeId() == google.maps.MapTypeId.ROADMAP ? google.maps.MapTypeId.SATELLITE : google.maps.MapTypeId.ROADMAP);
+        }
+
+
+        function changeRadius() {
+            heatmap.set('radius', heatmap.get('radius') ? null : 20);
+        }
+
+        function changeOpacity() {
+            heatmap.set('opacity', heatmap.get('opacity') ? null : 0.2);
+        }
+
+        // Heatmap data
+        function getPoints() {
+            console.log("Getting points for heat array.");
+            return heat_array;
+
+        }
+    </script>
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAC5rX-oz5CqocubTsEMewN3euda7RRs6w&libraries=visualization&callback=initMap">
+    </script>
+
+  </body>
+</html>
